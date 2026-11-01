@@ -1,32 +1,105 @@
 import sys
 
+import numpy as np
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
     QTabWidget,
     QVBoxLayout,
-    QWidget,)
-
+    QWidget,
+)
+FACTEUR_CURSEUR = 100
+X_MIN = -10.0
+X_MAX = 10.0
+NOMBRE_POINTS = 1000
+LIMITE_VISIBLE = 6
+LIMITE_TANGENTE = 10.0
+FONCTIONS_POLYNOMIALES = ["Linéaire", "Quadratique"]
+FONCTIONS_TRIGONOMETRIQUES = ["Sinus", "Cosinus", "Tangente (bornée)"]
 STYLE = """
-    QGroupBox {
-        font-weight: bold;
-        border: 2px solid #cccccc;
-        border-radius: 5px;
-        margin-top: 10px;
-    }
-    QGroupBox::title {
-        subcontrol-origin: margin;
-        left: 10px;
-        padding: 0 5px;
-    }
-    """
+QGroupBox {
+    font-weight: bold;
+    border: 2px solid #cccccc;
+    border-radius: 5px;
+    margin-top: 10px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+}
+"""
+def calculer_lineaire(x, a, h, k):
+    """Calcule y = a(x - h) + k."""
+    return a * (x - h) + k
+def calculer_quadratique(x, a, h, k):
+    """Calcule y = a(x - h)^2 + k."""
+    return a * (x - h) ** 2 + k
 
+def calculer_sinus(x, a, h, k):
+    """Calcule y = a sin(x - h) + k."""
+    return a * np.sin(x - h) + k
 
+def calculer_cosinus(x, a, h, k):
+    """Calcule y = a cos(x - h) + k."""
+    return a * np.cos(x - h) + k
+def calculer_tangente(x, a, h, k):
+    """Calcule y = a tan(x - h) + k bornée entre -10 et 10"""
+    y = a * np.tan(x - h) + k
+    return np.clip(y, -LIMITE_TANGENTE, LIMITE_TANGENTE)
+
+FONCTIONS = {
+    "Linéaire": {
+        "formule": "y = a(x - h) + k",
+        "calcul": calculer_lineaire,
+        "bornes": {
+            "a": (-3.0, 3.0, 1.0),
+            "h": (-3.0, 3.0, 0.0),
+            "k": (-3.0, 3.0, 0.0),
+        },
+    },
+    "Quadratique": {
+        "formule": "y = a(x - h)^2 + k",
+        "calcul": calculer_quadratique,
+        "bornes": {
+            "a": (-2.0, 2.0, 1.0),
+            "h": (-3.0, 3.0, 0.0),
+            "k": (-3.0, 3.0, 0.0),
+        },
+    },
+    "Sinus": {
+        "formule": "y = a sin(x - h) + k",
+        "calcul": calculer_sinus,
+        "bornes": {
+            "a": (0.2, 3.0, 1.0),
+            "h": (-3.0, 3.0, 0.0),
+            "k": (-3.0, 3.0, 0.0),
+        },
+    },
+    "Cosinus": {
+        "formule": "y = a cos(x - h) + k",
+        "calcul": calculer_cosinus,
+        "bornes": {
+            "a": (0.2, 3.0, 1.0),
+            "h": (-3.0, 3.0, 0.0),
+            "k": (-3.0, 3.0, 0.0),
+        },
+    },
+    "Tangente (bornée)": {
+        "formule": "y = a tan(x - h) + k",
+        "calcul": calculer_tangente,
+        "bornes": {
+            "a": (0.2, 2.0, 1.0),
+            "h": (-3.0, 3.0, 0.0),
+            "k": (-3.0, 3.0, 0.0),
+        },
+    },
+}
 class FenetrePrincipale(QMainWindow):
-    """Fenetre a 2 onglets: mathematiques et traitement images"""
+    """Fenetre a 2 onglets:mathematiques et traitement images"""
 
     def __init__(self):
-        """Construit les deux onglets et trace la fonction"""
+        """Construit les 2 onglets et trace la fonction"""
         super().__init__()
         self.setObjectName("fenetre_principale")
         self.setWindowTitle("mini_projet_2:fonctions et images")
@@ -45,16 +118,14 @@ class FenetrePrincipale(QMainWindow):
         self._ajuster_a_l_ecran()
 
     def _ajuster_a_l_ecran(self):
-        """ajuste la fenetre et la rends proportionnel a l'ecran"""
+        """Adapte la taille de la fenetre à l'ecran et le centre"""
         ecran = self.screen().availableGeometry()
         self.resize(ecran.width() * 4 // 5, ecran.height() * 4 // 5)
         cadre = self.frameGeometry()
         cadre.moveCenter(ecran.center())
         self.move(cadre.topLeft())
-
-
 def main():
-    """Point d'entre de l'appli"""
+    """Point d'entree de l'appli"""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     fenetre = FenetrePrincipale()
