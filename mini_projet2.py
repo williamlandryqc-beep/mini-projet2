@@ -1,20 +1,25 @@
 import sys
 
 import numpy as np
+import pyqtgraph as pg
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
+    QHBoxLayout,
     QMainWindow,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-# Un QSlider ne manipule que des entiers:on multiplie les valeurs
-# decimales par ce facteur, puis on divise en les lisant
+pg.setConfigOptions(antialias=True)
+
+# Un QSlider ne manipule que des entiers : on multiplie les valeurs
+# décimales par ce facteur, puis on divise en les lisant.
 FACTEUR_CURSEUR = 100
 
-# Points calcules (plus large que la zone visible :le decalage h ne laisse
-# donc jamais de trou au bord du graphique)
+# Points calculés (plus large que la zone visible : le décalage h ne laisse
+# donc jamais de trou au bord du graphique).
 X_MIN = -10.0
 X_MAX = 10.0
 NOMBRE_POINTS = 1000
@@ -22,10 +27,12 @@ NOMBRE_POINTS = 1000
 # Zone visible du graphique, de -LIMITE_VISIBLE à +LIMITE_VISIBLE
 LIMITE_VISIBLE = 6
 
-# La tangente est bornee pour ne pas ecraser l'echelle pres des asymptotes
+# La tangente est bornée pour ne pas écraser l'échelle près des asymptotes
 LIMITE_TANGENTE = 10.0
 
-# Fonctions regroupees par categorie(separateur visuel entre les deux)
+EPAISSEUR_INITIALE = 2
+
+# Fonctions regroupées par catégorie (séparateur visuel entre les deux)
 FONCTIONS_POLYNOMIALES = ["Linéaire", "Quadratique"]
 FONCTIONS_TRIGONOMETRIQUES = ["Sinus", "Cosinus", "Tangente (bornée)"]
 
@@ -121,14 +128,18 @@ FONCTIONS = {
 
 
 class FenetrePrincipale(QMainWindow):
-    """Fenetre a 2 onglets:mathematiques et traitement images"""
+    """Fenêtre à deux onglets : mathématiques et traitement d'images."""
 
     def __init__(self):
-        """Construit les 2 onglets et trace la fonction"""
+        """Construit les deux onglets, puis trace la première fonction."""
         super().__init__()
         self.setObjectName("fenetre_principale")
-        self.setWindowTitle("mini_projet_2:fonctions et images")
+        self.setWindowTitle("Mini_projet_2 : fonctions et images")
         self.setStyleSheet(STYLE)
+
+        # État de la partie 1
+        self.couleur_courbe = QColor("blue")
+        self.x = np.linspace(X_MIN, X_MAX, NOMBRE_POINTS)
 
         widget_central = QWidget()
         widget_central.setObjectName("widget_central")
@@ -138,21 +149,61 @@ class FenetrePrincipale(QMainWindow):
         self.onglets = QTabWidget()
         self.onglets.setObjectName("onglets")
         disposition.addWidget(self.onglets)
+        self._creer_onglet_mathematiques()
 
-        self.statusBar().showMessage("pret")
+        self.statusBar().showMessage("Prêt")
         self._ajuster_a_l_ecran()
 
     def _ajuster_a_l_ecran(self):
-        """Adapte la taille de la fenetre à l'ecran et le centre"""
+        """Adapte la taille de la fenêtre à l'écran et la centre."""
         ecran = self.screen().availableGeometry()
         self.resize(ecran.width() * 4 // 5, ecran.height() * 4 // 5)
         cadre = self.frameGeometry()
         cadre.moveCenter(ecran.center())
         self.move(cadre.topLeft())
 
+    def _creer_onglet_mathematiques(self):
+        """Crée l'onglet 1 : graphique à gauche, contrôles à droite."""
+        onglet = QWidget()
+        onglet.setObjectName("onglet_mathematiques")
+        ligne = QHBoxLayout(onglet)
+
+        ligne.addWidget(self._creer_graphique(), 3)
+        self.onglets.addTab(onglet, "Mathématiques")
+
+    def _creer_graphique(self):
+        """Crée le graphique pyqtgraph (fond blanc, axes noirs) et la courbe."""
+        self.zone_graphique = pg.PlotWidget()
+        self.zone_graphique.setObjectName("zone_graphique")
+        self.zone_graphique.setBackground("w")
+        self.zone_graphique.setLabel("bottom", "x")
+        self.zone_graphique.setLabel("left", "y")
+        self.zone_graphique.showGrid(x=True, y=True)
+        self.zone_graphique.setXRange(-LIMITE_VISIBLE, LIMITE_VISIBLE)
+        self.zone_graphique.setYRange(-LIMITE_VISIBLE, LIMITE_VISIBLE)
+
+        # Axes et texte des axes en noir
+        axe_bas = self.zone_graphique.getAxis("bottom")
+        axe_gauche = self.zone_graphique.getAxis("left")
+        for axe in (axe_bas, axe_gauche):
+            axe.setPen(pg.mkPen(color="k", width=1))
+            axe.setTextPen("k")
+
+        # La courbe est créée une seule fois : ensuite on change seulement
+        # ses données (setData) ou son stylo (setPen).
+        self.courbe = self.zone_graphique.plot(
+            self.x, np.zeros_like(self.x), pen=self._creer_stylo()
+        )
+        return self.zone_graphique
+
+    def _creer_stylo(self):
+        """Crée le stylo (couleur et épaisseur) de la courbe."""
+        # Temporaire : sera lié au compteur d'épaisseur au commit 5
+        return pg.mkPen(color=self.couleur_courbe, width=EPAISSEUR_INITIALE)
+
 
 def main():
-    """Point d'entree de l'appli"""
+    """Point d'entrée de l'application."""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     fenetre = FenetrePrincipale()
