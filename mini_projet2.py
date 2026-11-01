@@ -6,13 +6,17 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QColorDialog,
     QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
     QSlider,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -132,6 +136,16 @@ FONCTIONS = {
     },
 }
 
+def colorer_etiquette(etiquette: QLabel, couleur: QColor):
+    """Affiche une couleur (nom hexadécimal + fond) dans une étiquette."""
+    couleur_hex = couleur.name()
+    # Texte blanc sur fond foncé, noir sur fond clair, pour rester lisible
+    couleur_texte = "white" if couleur.lightness() < 128 else "black"
+    etiquette.setText(f"Couleur : {couleur_hex}")
+    etiquette.setStyleSheet(
+        f"background: {couleur_hex}; color: {couleur_texte}; padding: 6px;"
+    )
+
 
 class FenetrePrincipale(QMainWindow):
     """Fenêtre à deux onglets : mathématiques et traitement d'images."""
@@ -182,6 +196,7 @@ class FenetrePrincipale(QMainWindow):
         colonne = QVBoxLayout()
         colonne.addWidget(self._creer_groupe_fonction())
         colonne.addWidget(self._creer_groupe_constantes())
+        colonne.addWidget(self._creer_groupe_apparence())
         colonne.addStretch()
 
         ligne.addWidget(self._creer_graphique(), 3)
@@ -215,8 +230,10 @@ class FenetrePrincipale(QMainWindow):
 
     def _creer_stylo(self):
         """Crée le stylo (couleur et épaisseur) de la courbe."""
-        # Temporaire : sera lié au compteur d'épaisseur au commit 5
-        return pg.mkPen(color=self.couleur_courbe, width=EPAISSEUR_INITIALE)
+        return pg.mkPen(
+            color=self.couleur_courbe,
+            width=self.compteur_epaisseur.value(),
+        )
 
     def _creer_groupe_fonction(self):
         """Crée le groupe avec la liste des fonctions et la formule."""
@@ -246,6 +263,42 @@ class FenetrePrincipale(QMainWindow):
         groupe = QGroupBox("Constantes")
         groupe.setObjectName("groupe_constantes")
         self.grille_curseurs = QGridLayout(groupe)
+        return groupe
+
+    def _creer_groupe_apparence(self):
+        """Crée le groupe : grille, couleur et épaisseur de la courbe."""
+        groupe = QGroupBox("Apparence")
+        groupe.setObjectName("groupe_apparence")
+        disposition = QVBoxLayout(groupe)
+
+        self.case_grille = QCheckBox("Afficher la grille")
+        self.case_grille.setObjectName("case_grille")
+        self.case_grille.setChecked(True)
+        self.case_grille.toggled.connect(self._basculer_grille)
+        disposition.addWidget(self.case_grille)
+
+        self.bouton_couleur = QPushButton("Choisir la couleur de la courbe")
+        self.bouton_couleur.setObjectName("bouton_couleur")
+        self.bouton_couleur.clicked.connect(self._choisir_couleur)
+        disposition.addWidget(self.bouton_couleur)
+
+        self.etiquette_couleur = QLabel()
+        self.etiquette_couleur.setObjectName("etiquette_couleur")
+        self.etiquette_couleur.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        colorer_etiquette(self.etiquette_couleur, self.couleur_courbe)
+        disposition.addWidget(self.etiquette_couleur)
+
+        ligne = QHBoxLayout()
+        ligne.addWidget(QLabel("Épaisseur :"))
+        self.compteur_epaisseur = QSpinBox()
+        self.compteur_epaisseur.setObjectName("compteur_epaisseur")
+        self.compteur_epaisseur.setRange(1, 4)
+        self.compteur_epaisseur.setValue(EPAISSEUR_INITIALE)
+        self.compteur_epaisseur.setSuffix(" px")
+        self.compteur_epaisseur.valueChanged.connect(self._changer_epaisseur)
+        ligne.addWidget(self.compteur_epaisseur)
+        ligne.addStretch()
+        disposition.addLayout(ligne)
         return groupe
 
     def _vider_curseurs(self):
@@ -323,6 +376,25 @@ class FenetrePrincipale(QMainWindow):
         calcul = FONCTIONS[nom]["calcul"]
         y = calcul(self.x, **self._lire_constantes())
         self.courbe.setData(self.x, y)
+
+    def _basculer_grille(self, coche: bool):
+        """Affiche ou masque la grille du graphique."""
+        self.zone_graphique.showGrid(x=coche, y=coche)
+
+    def _choisir_couleur(self):
+        """Ouvre le sélecteur de couleur et change le stylo de la courbe."""
+        couleur = QColorDialog.getColor(
+            self.couleur_courbe, self, "Choisir la couleur de la courbe"
+        )
+        if couleur.isValid():
+            self.couleur_courbe = couleur
+            colorer_etiquette(self.etiquette_couleur, couleur)
+            # Seulement l'apparence : les données ne sont pas retracées
+            self.courbe.setPen(self._creer_stylo())
+
+    def _changer_epaisseur(self):
+        """Change l'épaisseur de la courbe sans retracer les données."""
+        self.courbe.setPen(self._creer_stylo())
 
 
 def main():
