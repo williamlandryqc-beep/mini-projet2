@@ -2,11 +2,17 @@ import sys
 
 import numpy as np
 import pyqtgraph as pg
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
+    QSlider,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -134,11 +140,13 @@ class FenetrePrincipale(QMainWindow):
         """Construit les deux onglets, puis trace la première fonction."""
         super().__init__()
         self.setObjectName("fenetre_principale")
-        self.setWindowTitle("Mini_projet_2 : fonctions et images")
+        self.setWindowTitle("Mini-projet 2 : fonctions et images")
         self.setStyleSheet(STYLE)
 
         # État de la partie 1
         self.couleur_courbe = QColor("blue")
+        self.curseurs = {}
+        self.etiquettes_valeurs = {}
         self.x = np.linspace(X_MIN, X_MAX, NOMBRE_POINTS)
 
         widget_central = QWidget()
@@ -152,6 +160,7 @@ class FenetrePrincipale(QMainWindow):
         self._creer_onglet_mathematiques()
 
         self.statusBar().showMessage("Prêt")
+        self._changer_fonction()
         self._ajuster_a_l_ecran()
 
     def _ajuster_a_l_ecran(self):
@@ -168,7 +177,15 @@ class FenetrePrincipale(QMainWindow):
         onglet.setObjectName("onglet_mathematiques")
         ligne = QHBoxLayout(onglet)
 
+        # Les contrôles sont créés avant le graphique : la courbe a besoin
+        # de l'épaisseur choisie dans le compteur.
+        colonne = QVBoxLayout()
+        colonne.addWidget(self._creer_groupe_fonction())
+        colonne.addWidget(self._creer_groupe_constantes())
+        colonne.addStretch()
+
         ligne.addWidget(self._creer_graphique(), 3)
+        ligne.addLayout(colonne, 1)
         self.onglets.addTab(onglet, "Mathématiques")
 
     def _creer_graphique(self):
@@ -200,6 +217,112 @@ class FenetrePrincipale(QMainWindow):
         """Crée le stylo (couleur et épaisseur) de la courbe."""
         # Temporaire : sera lié au compteur d'épaisseur au commit 5
         return pg.mkPen(color=self.couleur_courbe, width=EPAISSEUR_INITIALE)
+
+    def _creer_groupe_fonction(self):
+        """Crée le groupe avec la liste des fonctions et la formule."""
+        groupe = QGroupBox("Fonction")
+        groupe.setObjectName("groupe_fonction")
+        disposition = QVBoxLayout(groupe)
+
+        self.liste_fonctions = QComboBox()
+        self.liste_fonctions.setObjectName("liste_fonctions")
+        self.liste_fonctions.addItems(FONCTIONS_POLYNOMIALES)
+        # Séparateur visuel entre les deux catégories
+        self.liste_fonctions.insertSeparator(self.liste_fonctions.count())
+        self.liste_fonctions.addItems(FONCTIONS_TRIGONOMETRIQUES)
+        self.liste_fonctions.currentIndexChanged.connect(
+            self._changer_fonction
+        )
+        disposition.addWidget(self.liste_fonctions)
+
+        self.etiquette_formule = QLabel()
+        self.etiquette_formule.setObjectName("etiquette_formule")
+        self.etiquette_formule.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        disposition.addWidget(self.etiquette_formule)
+        return groupe
+
+    def _creer_groupe_constantes(self):
+        """Crée le groupe qui contiendra les trois curseurs a, h et k."""
+        groupe = QGroupBox("Constantes")
+        groupe.setObjectName("groupe_constantes")
+        self.grille_curseurs = QGridLayout(groupe)
+        return groupe
+
+    def _vider_curseurs(self):
+        """Supprime les anciens curseurs et étiquettes de la grille."""
+        while self.grille_curseurs.count():
+            item = self.grille_curseurs.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        self.curseurs = {}
+        self.etiquettes_valeurs = {}
+
+    def _reconstruire_curseurs(self, nom_fonction: str):
+        """Recrée les trois curseurs avec les bornes de la fonction."""
+        self._vider_curseurs()
+        bornes = FONCTIONS[nom_fonction]["bornes"]
+
+        for rang, constante in enumerate(("a", "h", "k")):
+            minimum, maximum, defaut = bornes[constante]
+
+            curseur = QSlider(Qt.Orientation.Horizontal)
+            curseur.setObjectName(f"curseur_{constante}")
+            curseur.setRange(
+                round(minimum * FACTEUR_CURSEUR),
+                round(maximum * FACTEUR_CURSEUR),
+            )
+            curseur.setValue(round(defaut * FACTEUR_CURSEUR))
+            # On connecte après setValue : pas de tracé inutile
+            curseur.valueChanged.connect(self._curseur_modifie)
+
+            etiquette_valeur = QLabel()
+            etiquette_valeur.setObjectName(f"valeur_{constante}")
+            etiquette_valeur.setMinimumWidth(70)
+
+            self.curseurs[constante] = curseur
+            self.etiquettes_valeurs[constante] = etiquette_valeur
+
+            self.grille_curseurs.addWidget(QLabel(constante), rang, 0)
+            self.grille_curseurs.addWidget(curseur, rang, 1)
+            self.grille_curseurs.addWidget(etiquette_valeur, rang, 2)
+
+        self._afficher_valeurs()
+
+    def _lire_constantes(self):
+        """Retourne les valeurs courantes {'a': ..., 'h': ..., 'k': ...}."""
+        return {
+            constante: curseur.value() / FACTEUR_CURSEUR
+            for constante, curseur in self.curseurs.items()
+        }
+
+    def _afficher_valeurs(self):
+        """Affiche la valeur courante de chaque curseur."""
+        for constante, valeur in self._lire_constantes().items():
+            self.etiquettes_valeurs[constante].setText(
+                f"{constante} = {valeur:.2f}"
+            )
+
+    def _changer_fonction(self):
+        """Reconstruit les curseurs et retrace pour la fonction choisie."""
+        nom = self.liste_fonctions.currentText()
+        self.etiquette_formule.setText(FONCTIONS[nom]["formule"])
+        self._reconstruire_curseurs(nom)
+        self._tracer()
+        self.statusBar().showMessage(f"Fonction choisie : {nom}")
+
+    def _curseur_modifie(self):
+        """Met à jour les valeurs affichées, puis retrace immédiatement."""
+        self._afficher_valeurs()
+        self._tracer()
+
+    def _tracer(self):
+        """Calcule y avec les constantes courantes et met la courbe à jour."""
+        nom = self.liste_fonctions.currentText()
+        calcul = FONCTIONS[nom]["calcul"]
+        y = calcul(self.x, **self._lire_constantes())
+        self.courbe.setData(self.x, y)
 
 
 def main():
