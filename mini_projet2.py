@@ -2,6 +2,7 @@ import sys
 
 import numpy as np
 import pyqtgraph as pg
+from PIL import Image, ImageQt
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -9,6 +10,8 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QGraphicsScene,
+    QGraphicsView,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -45,6 +48,11 @@ EPAISSEUR_INITIALE = 2
 # Fonctions regroupées par catégorie (séparateur visuel entre les deux)
 FONCTIONS_POLYNOMIALES = ["Linéaire", "Quadratique"]
 FONCTIONS_TRIGONOMETRIQUES = ["Sinus", "Cosinus", "Tangente (bornée)"]
+
+FILTRE_FLOU = "Flou gaussien"
+FILTRE_CONTOURS = "Détection de contours"
+FILTRE_CONTRASTE = "Contraste"
+FILTRES = [FILTRE_FLOU, FILTRE_CONTOURS, FILTRE_CONTRASTE]
 
 STYLE = """
 QGroupBox {
@@ -147,6 +155,74 @@ def colorer_etiquette(etiquette: QLabel, couleur: QColor):
     )
 
 
+def preparer_pour_qt(image: Image.Image) -> Image.Image:
+    """Retourne une image dans un mode que ImageQt convertit correctement."""
+    if image.mode in ("RGB", "RGBA", "L", "P"):
+        return image
+    if image.mode == "1":
+        return image.convert("L")
+    if image.mode == "CMYK":
+        return image.convert("RGB")
+    if image.mode in ("I;16", "I", "F"):
+        # Image scientifique : remise à l'échelle de 0 à 255 avant la conversion en 8 bits
+        image = image.convert("F")
+        minimum, maximum = image.getextrema()
+        echelle = 255 / (maximum - minimum) if maximum > minimum else 1
+        return image.point(lambda valeur: (valeur - minimum) * echelle).convert("L")
+    return image.convert("RGBA")
+
+
+class PanneauImage(QGroupBox):
+    """Panneau avec un titre, une vue graphique et une ligne d'information."""
+
+    def __init__(self, titre: str):
+        """Crée le panneau, vide au départ."""
+        super().__init__(titre)
+        self.setObjectName(f"panneau_{titre}")
+        self.item_image = None
+
+        self.scene_panneau = QGraphicsScene(self)
+        self.vue = QGraphicsView(self.scene_panneau)
+        self.vue.setObjectName(f"vue_{titre}")
+        self.vue.setMinimumSize(260, 200)
+
+        self.label_info = QLabel("Pas d'image")
+        self.label_info.setObjectName(f"info_{titre}")
+        self.label_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        disposition = QVBoxLayout(self)
+        disposition.addWidget(self.vue)
+        disposition.addWidget(self.label_info)
+
+    def afficher(self, image: Image.Image, info: str = ""):
+        """Affiche une image Pillow et met à jour la ligne d'information."""
+        pixmap = ImageQt.toqpixmap(preparer_pour_qt(image))
+
+        self.scene_panneau.clear()
+        self.item_image = self.scene_panneau.addPixmap(pixmap)
+        # Toujours réajuster le rectangle de la scène : sans cela, une
+        # image plus petite que la précédente garderait l'ancien cadrage.
+        self.scene_panneau.setSceneRect(self.item_image.boundingRect())
+        self.reajuster()
+
+        texte = f"Taille : {image.width} x {image.height} px"
+        if info:
+            texte += f" | {info}"
+        self.label_info.setText(texte)
+
+    def reajuster(self):
+        """Recadre la vue pour que l'image reste entièrement visible."""
+        if self.item_image is not None:
+            self.vue.fitInView(
+                self.item_image, Qt.AspectRatioMode.KeepAspectRatio
+            )
+
+    def showEvent(self, evenement):
+        """Recadre l'image quand l'onglet qui la contient devient visible."""
+        super().showEvent(evenement)
+        self.reajuster()
+
+
 class FenetrePrincipale(QMainWindow):
     """Fenêtre à deux onglets : mathématiques et traitement d'images."""
 
@@ -163,6 +239,10 @@ class FenetrePrincipale(QMainWindow):
         self.etiquettes_valeurs = {}
         self.x = np.linspace(X_MIN, X_MAX, NOMBRE_POINTS)
 
+        # État de la partie 2
+        self.image_capturee: Image.Image | None = None
+        self.image_travail: Image.Image | None = None
+
         widget_central = QWidget()
         widget_central.setObjectName("widget_central")
         self.setCentralWidget(widget_central)
@@ -172,6 +252,7 @@ class FenetrePrincipale(QMainWindow):
         self.onglets.setObjectName("onglets")
         disposition.addWidget(self.onglets)
         self._creer_onglet_mathematiques()
+        self._creer_onglet_images()
 
         self.statusBar().showMessage("Prêt")
         self._changer_fonction()
@@ -299,6 +380,89 @@ class FenetrePrincipale(QMainWindow):
         ligne.addWidget(self.compteur_epaisseur)
         ligne.addStretch()
         disposition.addLayout(ligne)
+        return groupe
+
+    def _creer_onglet_images(self):
+        """Crée l'onglet 2 : fonction active, filtre et images côte à côte."""
+        onglet = QWidget()
+        onglet.setObjectName("onglet_images")
+        disposition = QVBoxLayout(onglet)
+        disposition.addWidget(self._creer_groupe_fonction_active())
+        disposition.addWidget(self._creer_groupe_filtre())
+
+        self.panneau_avant = PanneauImage("Avant filtre")
+        self.panneau_apres = PanneauImage("Après filtre (niveaux de gris)")
+        self.panneaux = (self.panneau_avant, self.panneau_apres)
+
+        grille = QGridLayout()
+        grille.addWidget(self.panneau_avant, 0, 0)
+        grille.addWidget(self.panneau_apres, 0, 1)
+        # Deux colonnes de même largeur
+        grille.setColumnStretch(0, 1)
+        grille.setColumnStretch(1, 1)
+        disposition.addLayout(grille, 1)
+        self.onglets.addTab(onglet, "Traitement d'images")
+
+    def _creer_groupe_fonction_active(self):
+        """Crée le groupe en lecture seule : fonction, constantes, couleur."""
+        groupe = QGroupBox("Fonction active (reçue de la partie 1)")
+        groupe.setObjectName("groupe_fonction_active")
+        disposition = QVBoxLayout(groupe)
+
+        self.etiquette_fonction_active = QLabel("Fonction : -")
+        self.etiquette_fonction_active.setObjectName(
+            "etiquette_fonction_active"
+        )
+        self.etiquette_constantes_actives = QLabel("Constantes : -")
+        self.etiquette_constantes_actives.setObjectName(
+            "etiquette_constantes_actives"
+        )
+        self.etiquette_couleur_active = QLabel("Couleur : -")
+        self.etiquette_couleur_active.setObjectName(
+            "etiquette_couleur_active"
+        )
+
+        disposition.addWidget(self.etiquette_fonction_active)
+        disposition.addWidget(self.etiquette_constantes_actives)
+        disposition.addWidget(self.etiquette_couleur_active)
+        return groupe
+
+    def _creer_groupe_filtre(self):
+        """Crée le groupe : liste des filtres et curseur d'intensité."""
+        groupe = QGroupBox("Filtre")
+        groupe.setObjectName("groupe_filtre")
+        ligne = QHBoxLayout(groupe)
+
+        ligne.addWidget(QLabel("Filtre :"))
+        self.liste_filtres = QComboBox()
+        self.liste_filtres.setObjectName("liste_filtres")
+        self.liste_filtres.addItems(FILTRES)
+        ligne.addWidget(self.liste_filtres)
+
+        ligne.addWidget(QLabel("Intensité :"))
+        self.glissiere_intensite = QSlider(Qt.Orientation.Horizontal)
+        self.glissiere_intensite.setObjectName("glissiere_intensite")
+        self.glissiere_intensite.setRange(0, 10)
+        self.glissiere_intensite.setValue(3)
+        self.glissiere_intensite.setTickPosition(
+            QSlider.TickPosition.TicksBelow
+        )
+        self.glissiere_intensite.setTickInterval(1)
+        ligne.addWidget(self.glissiere_intensite, 1)
+
+        self.compteur_intensite = QSpinBox()
+        self.compteur_intensite.setObjectName("compteur_intensite")
+        self.compteur_intensite.setRange(0, 10)
+        self.compteur_intensite.setValue(3)
+        ligne.addWidget(self.compteur_intensite)
+
+        # Le curseur et le compteur restent synchronisés (comme au cours)
+        self.glissiere_intensite.valueChanged.connect(
+            self.compteur_intensite.setValue
+        )
+        self.compteur_intensite.valueChanged.connect(
+            self.glissiere_intensite.setValue
+        )
         return groupe
 
     def _vider_curseurs(self):
