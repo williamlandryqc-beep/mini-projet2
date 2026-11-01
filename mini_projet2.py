@@ -8,14 +8,27 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+# Un QSlider ne manipule que des entiers:on multiplie les valeurs
+# decimales par ce facteur, puis on divise en les lisant
 FACTEUR_CURSEUR = 100
+
+# Points calcules (plus large que la zone visible :le decalage h ne laisse
+# donc jamais de trou au bord du graphique)
 X_MIN = -10.0
 X_MAX = 10.0
 NOMBRE_POINTS = 1000
+
+# Zone visible du graphique, de -LIMITE_VISIBLE à +LIMITE_VISIBLE
 LIMITE_VISIBLE = 6
+
+# La tangente est bornee pour ne pas ecraser l'echelle pres des asymptotes
 LIMITE_TANGENTE = 10.0
+
+# Fonctions regroupees par categorie(separateur visuel entre les deux)
 FONCTIONS_POLYNOMIALES = ["Linéaire", "Quadratique"]
 FONCTIONS_TRIGONOMETRIQUES = ["Sinus", "Cosinus", "Tangente (bornée)"]
+
 STYLE = """
 QGroupBox {
     font-weight: bold;
@@ -29,25 +42,35 @@ QGroupBox::title {
     padding: 0 5px;
 }
 """
+
 def calculer_lineaire(x, a, h, k):
     """Calcule y = a(x - h) + k."""
     return a * (x - h) + k
+
+
 def calculer_quadratique(x, a, h, k):
     """Calcule y = a(x - h)^2 + k."""
     return a * (x - h) ** 2 + k
+
 
 def calculer_sinus(x, a, h, k):
     """Calcule y = a sin(x - h) + k."""
     return a * np.sin(x - h) + k
 
+
 def calculer_cosinus(x, a, h, k):
     """Calcule y = a cos(x - h) + k."""
     return a * np.cos(x - h) + k
+
+
 def calculer_tangente(x, a, h, k):
-    """Calcule y = a tan(x - h) + k bornée entre -10 et 10"""
+    """Calcule y = a tan(x - h) + k, bornée entre -10 et 10."""
     y = a * np.tan(x - h) + k
     return np.clip(y, -LIMITE_TANGENTE, LIMITE_TANGENTE)
 
+
+# Pour chaque fonction : formule, fonction de calcul et bornes de chaque
+# constante sous la forme (minimum, maximum, valeur par défaut).
 FONCTIONS = {
     "Linéaire": {
         "formule": "y = a(x - h) + k",
@@ -95,6 +118,8 @@ FONCTIONS = {
         },
     },
 }
+
+
 class FenetrePrincipale(QMainWindow):
     """Fenetre a 2 onglets:mathematiques et traitement images"""
 
@@ -124,6 +149,8 @@ class FenetrePrincipale(QMainWindow):
         cadre = self.frameGeometry()
         cadre.moveCenter(ecran.center())
         self.move(cadre.topLeft())
+
+
 def main():
     """Point d'entree de l'appli"""
     app = QApplication(sys.argv)
