@@ -2,9 +2,9 @@ import sys
 
 import numpy as np
 import pyqtgraph as pg
-from PIL import Image, ImageQt
+from PIL import Image, ImageEnhance, ImageFilter, ImageQt
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QResizeEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -144,6 +144,19 @@ FONCTIONS = {
     },
 }
 
+def appliquer_filtre(image: Image.Image, nom: str, intensite: int):
+    """Applique le filtre Pillow choisi à l'image et retourne le résultat.
+
+    L'intensité est le rayon pour le flou et le facteur pour le contraste.
+    La détection de contours n'a pas de paramètre réglable dans Pillow.
+    """
+    if nom == FILTRE_FLOU:
+        return image.filter(ImageFilter.GaussianBlur(radius=intensite))
+    if nom == FILTRE_CONTOURS:
+        return image.filter(ImageFilter.FIND_EDGES)
+    return ImageEnhance.Contrast(image).enhance(intensite)
+
+
 def colorer_etiquette(etiquette: QLabel, couleur: QColor):
     """Affiche une couleur (nom hexadécimal + fond) dans une étiquette."""
     couleur_hex = couleur.name()
@@ -253,6 +266,7 @@ class FenetrePrincipale(QMainWindow):
         disposition.addWidget(self.onglets)
         self._creer_onglet_mathematiques()
         self._creer_onglet_images()
+        self.onglets.currentChanged.connect(self._changer_onglet)
 
         self.statusBar().showMessage("Prêt")
         self._changer_fonction()
@@ -437,6 +451,7 @@ class FenetrePrincipale(QMainWindow):
         self.liste_filtres = QComboBox()
         self.liste_filtres.setObjectName("liste_filtres")
         self.liste_filtres.addItems(FILTRES)
+        self.liste_filtres.currentIndexChanged.connect(self._changer_filtre)
         ligne.addWidget(self.liste_filtres)
 
         ligne.addWidget(QLabel("Intensité :"))
@@ -463,6 +478,7 @@ class FenetrePrincipale(QMainWindow):
         self.compteur_intensite.valueChanged.connect(
             self.glissiere_intensite.setValue
         )
+        self.glissiere_intensite.valueChanged.connect(self._appliquer_filtre)
         return groupe
 
     def _vider_curseurs(self):
@@ -559,6 +575,64 @@ class FenetrePrincipale(QMainWindow):
     def _changer_epaisseur(self):
         """Change l'épaisseur de la courbe sans retracer les données."""
         self.courbe.setPen(self._creer_stylo())
+
+    def _changer_onglet(self, indice: int):
+        """Capture le graphique quand l'utilisateur ouvre la partie 2."""
+        if self.onglets.widget(indice).objectName() == "onglet_images":
+            self._capturer_graphique()
+
+    def _capturer_graphique(self):
+        """Capture le graphique affiché et prépare l'image de travail.
+
+        grab() donne le rendu réel du PlotWidget (pas un nouveau calcul).
+        L'image capturée sert seulement à l'affichage « avant ». Les
+        filtres s'appliquent sur une copie en niveaux de gris.
+        """
+        pixmap = self.zone_graphique.grab()
+        self.image_capturee = ImageQt.fromqpixmap(pixmap)
+        self.image_travail = self.image_capturee.convert("L")
+
+        self._afficher_fonction_active()
+        self.panneau_avant.afficher(self.image_capturee, "Capture")
+        self._appliquer_filtre()
+        self.statusBar().showMessage("Graphique capturé")
+
+    def _afficher_fonction_active(self):
+        """Affiche (lecture seule) la fonction active de la partie 1."""
+        nom = self.liste_fonctions.currentText()
+        formule = FONCTIONS[nom]["formule"]
+        constantes = ",  ".join(
+            f"{constante} = {valeur:.2f}"
+            for constante, valeur in self._lire_constantes().items()
+        )
+        self.etiquette_fonction_active.setText(
+            f"Fonction : {nom}   ({formule})"
+        )
+        self.etiquette_constantes_actives.setText(f"Constantes : {constantes}")
+        colorer_etiquette(self.etiquette_couleur_active, self.couleur_courbe)
+
+    def _changer_filtre(self):
+        """Active le curseur selon le filtre, puis régénère l'image."""
+        # La détection de contours n'a pas de paramètre réglable
+        sans_parametre = self.liste_filtres.currentText() == FILTRE_CONTOURS
+        self.glissiere_intensite.setEnabled(not sans_parametre)
+        self.compteur_intensite.setEnabled(not sans_parametre)
+        self._appliquer_filtre()
+
+    def _appliquer_filtre(self):
+        """Applique le filtre à l'image de travail et l'affiche."""
+        if self.image_travail is None:
+            return
+        nom = self.liste_filtres.currentText()
+        intensite = self.glissiere_intensite.value()
+        resultat = appliquer_filtre(self.image_travail, nom, intensite)
+        self.panneau_apres.afficher(resultat, f"{nom} ({intensite})")
+
+    def resizeEvent(self, evenement: QResizeEvent):
+        """Réajuste chaque panneau quand la fenêtre est redimensionnée."""
+        super().resizeEvent(evenement)
+        for panneau in self.panneaux:
+            panneau.reajuster()
 
 
 def main():
